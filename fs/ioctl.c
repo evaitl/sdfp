@@ -643,6 +643,9 @@ static int ioctl_file_dedupe_range(struct file *file,
 		goto out;
 	}
 
+	if(same->dest_count != count)
+		printk(KERN_INFO "Triggered bug: %s!\n", "CVE-2016-6516");
+		
 	same->dest_count = count;
 	ret = vfs_dedupe_file_range(file, same);
 	if (ret)
