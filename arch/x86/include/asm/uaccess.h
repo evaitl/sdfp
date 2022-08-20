@@ -152,7 +152,13 @@ extern int __get_user_bad(void);
  * Return: zero on success, or -EFAULT on error.
  * On error, the variable @x is set to zero.
  */
+#if CONFIG_DEBUG_SDFP
+#define get_user(x,ptr) ({ might_fault();                            \
+                           (sdfp_check(ptr, sizeof(*ptr)) ? -EFAULT: \
+                            do_get_user_call(get_user,x,ptr)); })
+#else
 #define get_user(x,ptr) ({ might_fault(); do_get_user_call(get_user,x,ptr); })
+#endif
 
 /**
  * __get_user - Get a simple variable from user space, with less checking.

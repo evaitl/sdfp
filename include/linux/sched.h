@@ -66,7 +66,13 @@ struct signal_struct;
 struct task_delay_info;
 struct task_group;
 struct io_uring_task;
-
+#ifdef CONFIG_DEBUG_SDFP
+struct sdfp_node {
+    struct sdfp_node *next;
+    uintptr_t start;
+    uintptr_t end;
+};
+#endif
 /*
  * Task state bitmask. NOTE! These bits are also
  * encoded in fs/proc/array.c: get_task_state().
@@ -1028,7 +1034,10 @@ struct task_struct {
 	/* Mutex deadlock detection: */
 	struct mutex_waiter		*blocked_on;
 #endif
-
+#ifdef CONFIG_DEBUG_SDFP
+       bool sdfp_disabled;
+       struct sdfp_node *sdfp_list;
+#endif
 #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
 	int				non_block_count;
 #endif

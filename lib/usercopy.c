@@ -5,13 +5,54 @@
 #include <linux/uaccess.h>
 
 /* out-of-line parts */
-
+#ifdef CONFIG_DEBUG_SDFP
+/*
+  sdfp_check: Double fetch protection. Called from get_user() and copy_from_user(). 
+  @ptr: The user ptr
+  @size: The length to copy
+  
+  Context: user context only.    
+    
+  Return: 0 on OK, else 1. 
+*/
+bool sdfp_check(void *ptr, size_t size){
+        if (current->sdfp_disabled) {
+                return 0; 
+        }
+        uintptr_t start=ptr;
+        uintptr_t end=ptr+size;
+        sdfp_node *cn=current->sdfp_list;
+        bool merged=false;
+        while(cn){
+                if (end < cn->start || start > cn->end){
+                        // No overlap
+                } else if (start == cn->end) {
+                        cn->end = end; // Append to an existing entry. 
+                        merged=true;
+                } else {
+                        printk("sdfp: double fetch detected pid %d, rax %#lx",
+                               current->pid, task_pt_regs(current)->orig_ax);
+                        return 1;
+                }
+                cn=cn->next;
+        }
+        if (!merged) {
+                cn=kmalloc(sizeof(struct sdfp_node), GFP_KERNEL);
+                if (cn){
+                        cn->next=current->sdfp_list;
+                        cn->start=start;
+                        cn->end=end;
+                        current->sdfp_list=cn;
+                }
+        }
+}
+#endif
 #ifndef INLINE_COPY_FROM_USER
 unsigned long _copy_from_user(void *to, const void __user *from, unsigned long n)
 {
 	unsigned long res = n;
 	might_fault();
-	if (!should_fail_usercopy() && likely(access_ok(from, n))) {
+	if (!should_fail_usercopy() && !sdfp_check(from, n) && likely(access_ok(from, n))) {
 		instrument_copy_from_user(to, from, n);
 		res = raw_copy_from_user(to, from, n);
 	}
