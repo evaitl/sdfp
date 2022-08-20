@@ -9,7 +9,7 @@
 /*
   sdfp_cleanup: Clean up sdfp structures. Call at start or end of a syscall. 
  */
-void sdfp_cleanup(){
+void sdfp_cleanup(void){
         current->sdfp_disabled=false;
         struct sdfp_node *cn=current->sdfp_list;
         current->sdfp_list=0;
