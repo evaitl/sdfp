@@ -33,6 +33,14 @@ config X86_64
 	select NEED_DMA_MAP_STATE
 	select SWIOTLB
 
+config DEBUG_SDFP
+        bool "Run time syscall doublefetch prevention"
+        depends on X86_64
+        default n
+        help
+          Checks for double fetching in system calls. May cause
+          an error and a printk() if one is seen. 
+
 config FORCE_DYNAMIC_FTRACE
 	def_bool y
 	depends on X86_32

@@ -7,21 +7,35 @@
 /* out-of-line parts */
 #ifdef CONFIG_DEBUG_SDFP
 /*
+  sdfp_cleanup: Clean up sdfp structures. Call at start or end of a syscall. 
+ */
+void sdfp_cleanup(){
+        current->sdfp_disabled=false;
+        struct sdfp_node *cn=current->sdfp_list;
+        current->sdfp_list=0;
+        while(cn) {
+                struct sdfp_node *next=cn->next;
+                kfree(cn);
+                cn=next;
+        }
+}
+EXPORT_SYMBOL(sdfp_cleanup);
+/*
   sdfp_check: Double fetch protection. Called from get_user() and copy_from_user(). 
   @ptr: The user ptr
   @size: The length to copy
   
   Context: user context only.    
     
-  Return: 0 on OK, else 1. 
+  Return: false on OK, else true. 
 */
-bool sdfp_check(void *ptr, size_t size){
+bool sdfp_check(uintptr_t ptr, uintptr_t size){
         if (current->sdfp_disabled) {
-                return 0; 
+                return false; 
         }
         uintptr_t start=ptr;
         uintptr_t end=ptr+size;
-        sdfp_node *cn=current->sdfp_list;
+        struct sdfp_node *cn=current->sdfp_list;
         bool merged=false;
         while(cn){
                 if (end < cn->start || start > cn->end){
@@ -30,9 +44,10 @@ bool sdfp_check(void *ptr, size_t size){
                         cn->end = end; // Append to an existing entry. 
                         merged=true;
                 } else {
+                        // orig_ax contains the syscall number.
                         printk("sdfp: double fetch detected pid %d, rax %#lx",
                                current->pid, task_pt_regs(current)->orig_ax);
-                        return 1;
+                        return true;
                 }
                 cn=cn->next;
         }
@@ -46,6 +61,7 @@ bool sdfp_check(void *ptr, size_t size){
                 }
         }
 }
+EXPORT_SYMBOL(sdfp_check);
 #endif
 #ifndef INLINE_COPY_FROM_USER
 unsigned long _copy_from_user(void *to, const void __user *from, unsigned long n)

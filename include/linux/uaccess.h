@@ -7,7 +7,10 @@
 #include <linux/minmax.h>
 #include <linux/sched.h>
 #include <linux/thread_info.h>
-
+#ifdef CONFIG_DEBUG_SDFP
+bool sdfp_check(void * ptr, uintptr_t size);
+void sdfp_cleanup();
+#endif
 #include <asm/uaccess.h>
 
 #ifdef CONFIG_SET_FS

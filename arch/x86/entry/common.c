@@ -38,8 +38,10 @@
 #ifdef CONFIG_X86_64
 __visible noinstr void do_syscall_64(unsigned long nr, struct pt_regs *regs)
 {
+#ifdef CONFIG_DEBUG_SDFP
+        sdfp_cleanup();
+#endif        
 	nr = syscall_enter_from_user_mode(regs, nr);
-
 	instrumentation_begin();
 	if (likely(nr < NR_syscalls)) {
 		nr = array_index_nospec(nr, NR_syscalls);
