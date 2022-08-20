@@ -8,7 +8,7 @@
 #include <linux/sched.h>
 #include <linux/thread_info.h>
 #ifdef CONFIG_DEBUG_SDFP
-bool sdfp_check(void * ptr, uintptr_t size);
+bool sdfp_check(uintptr_t ptr, uintptr_t size);
 void sdfp_cleanup(void);
 #endif
 #include <asm/uaccess.h>

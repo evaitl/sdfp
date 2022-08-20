@@ -154,7 +154,7 @@ extern int __get_user_bad(void);
  */
 #ifdef CONFIG_DEBUG_SDFP
 #define get_user(x,ptr) ({ might_fault();                            \
-                           (sdfp_check(ptr, sizeof(*ptr)) ? -EFAULT: \
+                           (sdfp_check((uintptr_t)ptr, sizeof(*ptr)) ? -EFAULT:        \
                             do_get_user_call(get_user,x,ptr)); })
 #else
 #define get_user(x,ptr) ({ might_fault(); do_get_user_call(get_user,x,ptr); })
