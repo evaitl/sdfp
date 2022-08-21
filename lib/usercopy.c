@@ -35,12 +35,13 @@ EXPORT_SYMBOL(sdfp_cleanup);
 bool sdfp_check(uintptr_t ptr, uintptr_t size){
         uintptr_t start=ptr;
         uintptr_t end=ptr+size;
-        struct sdfp_node *cn=current->sdfp_list;
         bool merged=false;
+        struct sdfp_node *cn=0;
 
         if (current->sdfp_disabled) {
                 return false; 
         }
+        cn=current->sdfp_list;
         while(cn){
                 if (start == cn->end) {
                         cn->end = end; // Append to an existing entry. 
