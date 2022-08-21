@@ -34,13 +34,13 @@ EXPORT_SYMBOL(sdfp_cleanup);
   Return: false on OK, else true. 
 */
 bool sdfp_check(uintptr_t ptr, uintptr_t size){
-        static int total_errors=0;
         uintptr_t start=ptr;
         uintptr_t end=ptr+size;
         bool merged=false;
         struct sdfp_node *cn=0;
-
-        if (current->sdfp_disabled || total_errors>10) {
+        static bool errored[1024];
+        
+        if (current->sdfp_disabled) {
                 return false; 
         }
         cn=current->sdfp_list;
@@ -50,12 +50,17 @@ bool sdfp_check(uintptr_t ptr, uintptr_t size){
                         merged=true;
                 } else if (!(end <= cn->start || start >= cn->end)) {
                         // orig_ax contains the syscall number.
-                        total_errors++;
-                        printk(KERN_ALERT "sdfp: double fetch detected pid %d, rax %#lx",
-                               current->pid, current_pt_regs()->orig_ax);
-                        printk(KERN_ALERT, "(%#lx, %#lx) overlaps (%#lx, %#lx)",
+                        unsigned snr=(unsigned)(current_pt_regs()->orig_ax%1024);
+                        if (errored[snr]){
+                                return false;
+                        }
+                        printk(KERN_ALERT "sdfp: double fetch detected pid %d, syscall %d",
+                               current->pid, syscall);
+                        printk(KERN_ALERT "(%#lx, %#lx) overlaps (%#lx, %#lx)",
                                start, end, cn->start, cn->end);
-                        return true; 
+                        errored[snr]=true;
+                        return true;
+                        }
                 }
                 cn=cn->next;
         }
