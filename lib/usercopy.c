@@ -8,7 +8,7 @@
 
 #ifdef CONFIG_DEBUG_SDFP
 #include <linux/slab.h>      // kmalloc()
-#include <asm/processor.h>   // task_pt_regs()
+#include <linux/ptrace.h>    //  current_pt_regs()
 /*
   sdfp_cleanup: Clean up sdfp structures. Call at start or end of a syscall. 
  */
@@ -49,7 +49,7 @@ bool sdfp_check(uintptr_t ptr, uintptr_t size){
                 } else if (!(end < cn->start || start > cn->end)) {
                         // orig_ax contains the syscall number.
                         printk(KERN_ALERT "sdfp: double fetch detected pid %d, rax %#lx",
-                               current->pid, task_pt_regs(current)->orig_ax);
+                               current->pid, current_pt_regs()->orig_ax);
                         return true;
                 }
                 cn=cn->next;
