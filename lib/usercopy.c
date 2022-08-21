@@ -47,7 +47,7 @@ bool sdfp_check(uintptr_t ptr, uintptr_t size){
                 if (start == cn->end) {
                         cn->end = end; // Append to an existing entry. 
                         merged=true;
-                } else if (!(end < cn->start || start > cn->end)) {
+                } else if (!(end <= cn->start || start >= cn->end)) {
                         // orig_ax contains the syscall number.
                         printk(KERN_ALERT "sdfp: double fetch detected pid %d, rax %#lx",
                                current->pid, current_pt_regs()->orig_ax);

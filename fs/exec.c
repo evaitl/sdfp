@@ -2056,7 +2056,10 @@ SYSCALL_DEFINE3(execve,
 		const char __user *const __user *, argv,
 		const char __user *const __user *, envp)
 {
-	return do_execve(getname(filename), argv, envp);
+#ifdef CONFIG_DEBUG_SDFP
+        current->sdfp_disabled=true;
+#endif
+        return do_execve(getname(filename), argv, envp);
 }
 
 SYSCALL_DEFINE5(execveat,
@@ -2066,7 +2069,9 @@ SYSCALL_DEFINE5(execveat,
 		int, flags)
 {
 	int lookup_flags = (flags & AT_EMPTY_PATH) ? LOOKUP_EMPTY : 0;
-
+#ifdef CONFIG_DEBUG_SDFP
+        current->sdfp_disabled=true;
+#endif
 	return do_execveat(fd,
 			   getname_flags(filename, lookup_flags, NULL),
 			   argv, envp, flags);
@@ -2077,6 +2082,9 @@ COMPAT_SYSCALL_DEFINE3(execve, const char __user *, filename,
 	const compat_uptr_t __user *, argv,
 	const compat_uptr_t __user *, envp)
 {
+#ifdef CONFIG_DEBUG_SDFP
+        current->sdfp_disabled=true;
+#endif
 	return compat_do_execve(getname(filename), argv, envp);
 }
 
@@ -2087,7 +2095,9 @@ COMPAT_SYSCALL_DEFINE5(execveat, int, fd,
 		       int,  flags)
 {
 	int lookup_flags = (flags & AT_EMPTY_PATH) ? LOOKUP_EMPTY : 0;
-
+#ifdef CONFIG_DEBUG_SDFP
+        current->sdfp_disabled=true;
+#endif
 	return compat_do_execveat(fd,
 				  getname_flags(filename, lookup_flags, NULL),
 				  argv, envp, flags);
