@@ -45,7 +45,7 @@ bool sdfp_check(uintptr_t ptr, uintptr_t size){
                         merged=true;
                 } else {
                         // orig_ax contains the syscall number.
-                        printk("sdfp: double fetch detected pid %d, rax %#lx",
+                        printk(KERN_ALERT "sdfp: double fetch detected pid %d, rax %#lx",
                                current->pid, task_pt_regs(current)->orig_ax);
                         return true;
                 }
