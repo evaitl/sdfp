@@ -8,6 +8,7 @@
 
 #ifdef CONFIG_DEBUG_SDFP
 #include <linux/slab.h>      // kmalloc()
+#include <linux/perf_regs.h>
 #include <linux/ptrace.h>    //  current_pt_regs()
 /*
   sdfp_cleanup: Clean up sdfp structures. Call at start or end of a syscall. 
