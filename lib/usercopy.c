@@ -38,12 +38,11 @@ bool sdfp_check(uintptr_t ptr, uintptr_t size){
         uintptr_t start=ptr;
         uintptr_t end=ptr+size;
         bool merged=false;
-        struct sdfp_node *cn=0;
+        struct sdfp_node *cn=current->sdfp_list;
         
         if (current->sdfp_disabled) {
                 return false; 
         }
-        cn=current->sdfp_list;
         while(cn){
                 if (start == cn->end) {
                         cn->end = end; // Append to an existing entry. 
@@ -59,7 +58,8 @@ bool sdfp_check(uintptr_t ptr, uintptr_t size){
                         printk(KERN_ALERT "(%#lx, %#lx) overlaps (%#lx, %#lx)",
                                start, end, cn->start, cn->end);
                         errored[snr]=true;
-                        return true;
+                        // Change to true when all syscalls are fixed. 
+                        return false;
                 }
                 cn=cn->next;
         }
