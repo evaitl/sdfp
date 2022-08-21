@@ -5,7 +5,10 @@
 #include <linux/uaccess.h>
 
 /* out-of-line parts */
+
 #ifdef CONFIG_DEBUG_SDFP
+#include <linux/slab.h>      // kmalloc()
+#include <asm/processor.h>   // task_pt_regs()
 /*
   sdfp_cleanup: Clean up sdfp structures. Call at start or end of a syscall. 
  */
@@ -30,20 +33,19 @@ EXPORT_SYMBOL(sdfp_cleanup);
   Return: false on OK, else true. 
 */
 bool sdfp_check(uintptr_t ptr, uintptr_t size){
-        if (current->sdfp_disabled) {
-                return false; 
-        }
         uintptr_t start=ptr;
         uintptr_t end=ptr+size;
         struct sdfp_node *cn=current->sdfp_list;
         bool merged=false;
+
+        if (current->sdfp_disabled) {
+                return false; 
+        }
         while(cn){
-                if (end < cn->start || start > cn->end){
-                        // No overlap
-                } else if (start == cn->end) {
+                if (start == cn->end) {
                         cn->end = end; // Append to an existing entry. 
                         merged=true;
-                } else {
+                } else if (!(end < cn->start || start > cn->end)) {
                         // orig_ax contains the syscall number.
                         printk(KERN_ALERT "sdfp: double fetch detected pid %d, rax %#lx",
                                current->pid, task_pt_regs(current)->orig_ax);
@@ -60,6 +62,7 @@ bool sdfp_check(uintptr_t ptr, uintptr_t size){
                         current->sdfp_list=cn;
                 }
         }
+        return false;
 }
 EXPORT_SYMBOL(sdfp_check);
 #endif
@@ -68,7 +71,7 @@ unsigned long _copy_from_user(void *to, const void __user *from, unsigned long n
 {
 	unsigned long res = n;
 	might_fault();
-	if (!should_fail_usercopy() && !sdfp_check(from, n) && likely(access_ok(from, n))) {
+	if (!should_fail_usercopy() && !sdfp_check((uintptr_t)from, n) && likely(access_ok(from, n))) {
 		instrument_copy_from_user(to, from, n);
 		res = raw_copy_from_user(to, from, n);
 	}
