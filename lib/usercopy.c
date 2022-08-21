@@ -34,11 +34,11 @@ EXPORT_SYMBOL(sdfp_cleanup);
   Return: false on OK, else true. 
 */
 bool sdfp_check(uintptr_t ptr, uintptr_t size){
+        static bool errored[1024];
         uintptr_t start=ptr;
         uintptr_t end=ptr+size;
         bool merged=false;
         struct sdfp_node *cn=0;
-        static bool errored[1024];
         
         if (current->sdfp_disabled) {
                 return false; 
@@ -55,12 +55,11 @@ bool sdfp_check(uintptr_t ptr, uintptr_t size){
                                 return false;
                         }
                         printk(KERN_ALERT "sdfp: double fetch detected pid %d, syscall %d",
-                               current->pid, syscall);
+                               current->pid, snr);
                         printk(KERN_ALERT "(%#lx, %#lx) overlaps (%#lx, %#lx)",
                                start, end, cn->start, cn->end);
                         errored[snr]=true;
                         return true;
-                        }
                 }
                 cn=cn->next;
         }
