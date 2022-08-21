@@ -15,7 +15,8 @@
  */
 void sdfp_cleanup(void){
         current->sdfp_disabled=false;
-        struct sdfp_node *cn=current->sdfp_list;
+        struct sdfp_node *cn;
+        cn=current->sdfp_list;
         current->sdfp_list=0;
         while(cn) {
                 struct sdfp_node *next=cn->next;
