@@ -43,6 +43,9 @@ copy_user_generic(void *to, const void *from, unsigned len)
 				     "=d" (len)),
 			 "1" (to), "2" (from), "3" (len)
 			 : "memory", "rcx", "r8", "r9", "r10", "r11");
+#ifdef CONFIG_DEBUG_SDFP
+        sdfp_check(to,from,ret);
+#endif
 	return ret;
 }
 

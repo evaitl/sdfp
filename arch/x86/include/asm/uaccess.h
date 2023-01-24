@@ -152,7 +152,13 @@ extern int __get_user_bad(void);
  * Return: zero on success, or -EFAULT on error.
  * On error, the variable @x is set to zero.
  */
+#ifdef CONFIG_DEBUG_SDFP
+extern void sdfp_clear(void);
+extern void sdfp_check(volatile void *to, const void __user *from, unsigned long size);
+#define get_user(x,ptr) ({int ret; might_fault(); ret=do_get_user_call(get_user, x,ptr); sdfp_check(&x,ptr,sizeof(x)); ret;})
+#else
 #define get_user(x,ptr) ({ might_fault(); do_get_user_call(get_user,x,ptr); })
+#endif
 
 /**
  * __get_user - Get a simple variable from user space, with less checking.
@@ -175,7 +181,11 @@ extern int __get_user_bad(void);
  * Return: zero on success, or -EFAULT on error.
  * On error, the variable @x is set to zero.
  */
+#ifdef CONFIG_DEBUG_SDFP
+#define __get_user(x,ptr) ({int ret=do_get_user_call(get_user_nocheck,x,ptr); sdfp_check(&x,ptr,sizeof(x)); ret; })
+#else
 #define __get_user(x,ptr) do_get_user_call(get_user_nocheck,x,ptr)
+#endif
 
 
 #ifdef CONFIG_X86_32

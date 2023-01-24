@@ -1144,6 +1144,15 @@ config X86_MCE_INJECT
 	  If you don't know what a machine check is and you don't do kernel
 	  QA it is safe to say n.
 
+config DEBUG_SDFP
+       bool "Run time syscall doublefetch prevention"
+       depends on 64BIT && DEBUG_FS
+       default n
+       help
+         Checks for double fetching in system calls. Provides original data
+         on a double fetch. Syslogging of double fetches
+
+
 source "arch/x86/events/Kconfig"
 
 config X86_LEGACY_VM86

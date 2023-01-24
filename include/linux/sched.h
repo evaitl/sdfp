@@ -68,6 +68,14 @@ struct signal_struct;
 struct task_delay_info;
 struct task_group;
 
+#ifdef CONFIG_DEBUG_SDFP
+struct sdfp_node {
+        struct sdfp_node *next;
+        uintptr_t start;
+        uintptr_t end;
+        uint8_t *buf;
+};
+#endif
 /*
  * Task state bitmask. NOTE! These bits are also
  * encoded in fs/proc/array.c: get_task_state().
@@ -943,6 +951,9 @@ struct task_struct {
 	pid_t				pid;
 	pid_t				tgid;
 
+#ifdef CONFIG_DEBUG_SDFP
+        struct sdfp_node *sdfp_list;
+#endif
 #ifdef CONFIG_STACKPROTECTOR
 	/* Canary value for the -fstack-protector GCC feature: */
 	unsigned long			stack_canary;
