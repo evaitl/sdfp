@@ -248,7 +248,6 @@ void sdfp_check(volatile void *to, const void __user *from,
 	struct sdfp_node *nn = 0;
 	const uintptr_t start = (uintptr_t) from;
 	const uintptr_t end = start + n;
-	return;
 	if (test_bit(nr, sdfp_ignored_calls))
 		return;
         num_bytes[nr]+=n;
