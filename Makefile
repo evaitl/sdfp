@@ -2,8 +2,9 @@
 VERSION = 5
 PATCHLEVEL = 15
 SUBLEVEL = 74
-EXTRAVERSION =
+EXTRAVERSION = -sdfp
 NAME = Trick or Treat
+export INSTALL_MOD_STRIP = 1
 
 # *DOCUMENTATION*
 # To see a list of typical targets execute "make help"
