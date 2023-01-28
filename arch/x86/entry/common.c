@@ -132,6 +132,9 @@ __visible noinstr void do_int80_syscall_32(struct pt_regs *regs)
 	nr = syscall_enter_from_user_mode(regs, nr);
 	instrumentation_begin();
 
+#ifdef CONFIG_DEBUG_SDFP
+        sdfp_clear();
+#endif
 	do_syscall_32_irqs_on(regs, nr);
 
 	instrumentation_end();
@@ -152,6 +155,11 @@ static noinstr bool __do_fast_syscall_32(struct pt_regs *regs)
 	syscall_enter_from_user_mode_prepare(regs);
 
 	instrumentation_begin();
+
+#ifdef CONFIG_DEBUG_SDFP
+        sdfp_clear();
+#endif
+
 	/* Fetch EBP from where the vDSO stashed it. */
 	if (IS_ENABLED(CONFIG_X86_64)) {
 		/*
