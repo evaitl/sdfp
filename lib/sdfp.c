@@ -12,7 +12,8 @@
 #include <linux/export.h>
 #include <linux/debugfs.h>
 
-static bool sdfp_kill_doublefetch;
+static bool sdfp_no_check=1;
+static bool sdfp_kill_doublefetch=0;
 static DECLARE_BITMAP(sdfp_ignored_calls, NR_syscalls) = { 0 };
 static DECLARE_BITMAP(sdfp_multiread_reported, NR_syscalls) = { 0 };
 static unsigned num_multis[NR_syscalls];
@@ -109,6 +110,7 @@ static int __init sdfp_init(void)
                 return 1;
         }
         debugfs_create_bool("df_kill",0600,sdfp_dir,&sdfp_kill_doublefetch);
+	debugfs_create_bool("no_check",0600,sdfp_dir,&sdfp_no_check);
         debugfs_create_file("stats",0600,sdfp_dir,0,&stat_fops);
         debugfs_create_file("enable",0200,sdfp_dir,0,&enable_fops);
         debugfs_create_file("disable",0200,sdfp_dir,0,&disable_fops);
@@ -248,7 +250,7 @@ void sdfp_check(volatile void *to, const void __user *from,
 	struct sdfp_node *nn = 0;
 	const uintptr_t start = (uintptr_t) from;
 	const uintptr_t end = start + n;
-	if (test_bit(nr, sdfp_ignored_calls))
+	if (sdfp_no_check || test_bit(nr, sdfp_ignored_calls))
 		return;
         num_bytes[nr]+=n;
 	while (cn && !merged) {
