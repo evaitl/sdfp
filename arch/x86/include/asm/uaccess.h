@@ -153,7 +153,7 @@ extern int __get_user_bad(void);
  * On error, the variable @x is set to zero.
  */
 #ifdef CONFIG_DEBUG_SDFP
-extern void sdfp_clear(void);
+extern void sdfp_clear(struct task_struct *);
 extern void sdfp_check(volatile void *to, const void __user *from, unsigned long size);
 #define get_user(x,ptr) ({int ret; might_fault(); ret=do_get_user_call(get_user, x,ptr); sdfp_check(&x,ptr,sizeof(x)); ret;})
 #else
