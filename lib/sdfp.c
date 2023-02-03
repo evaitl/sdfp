@@ -20,49 +20,6 @@ static unsigned num_multis[NR_syscalls];
 static unsigned long num_bytes[NR_syscalls];
 struct dentry *sdfp_dir;
 
-#ifdef SDFP_DBG
-static const uint32_t SDFP_M1 = 0xa5a5a5a5c5c5c5c5;
-static const uint32_t SDFP_M2 = 0x5f5f5f5f8a8a8a8a;
-static inline void *sdfp_malloc(size_t size)
-{
-	size = (((size + 3) & ~0x03) + 12) >> 2; // size in words
-	uint32_t *m = kmalloc(size << 2, GPF_KERNEL);
-	m[0] = SDFP_M1;
-	m[1] = size;
-	m[size - 1] = SDFP_M2;
-	return &m[2];
-}
-static inline void sdfp_free(const void *ptr)
-{
-	const uint32_t *p = ptr;
-	BUG_ON(p[-2] != SDFP_M1);
-	BUG_ON(p[p[-1] - 1] != SDFP_M2);
-	kfree(&p[-2]);
-}
-static void sdfp_memcheck(void)
-{
-	struct sdfp_node *cn = current->sdfp_list;
-	while (cn) {
-		const uint32_t *p = cn->buf;
-		BUG_ON(p[-2] != SDFP_M1);
-		BUG_ON(p[p[-1] - 1] != SDFP_M2);
-		cn = cn->next;
-	}
-}
-#else
-static inline void *sdfp_malloc(size_t size)
-{
-	return kmalloc(size, GFP_KERNEL);
-}
-static inline void sdfp_free(const void *ptr)
-{
-	kfree(ptr);
-}
-static inline void sdfp_memcheck(void)
-{
-}
-#endif
-
 /**
    For stats, all writes will reset the stats data.
 
@@ -72,6 +29,12 @@ static inline void sdfp_memcheck(void)
    nr   enabled   num_multis   num_bytes
 
    30 bytes per line
+
+   1. syscall number
+   2. enabled or not (bool)
+   3. number of multi reads
+   4. Number of bytes read. 
+
 */
 static ssize_t stats_write(struct file *file, const char __user *ubuf,
 			   size_t count, loff_t *ppos)
@@ -166,117 +129,87 @@ static int __init sdfp_init(void)
 }
 module_init(sdfp_init);
 
-/**
- * Overlap found. Need to merge the `to` buf with the buf in cn. The
- * `to` buf is `(end-start)` long and the userspace location starts at
- * `start`.
- *
- */
-static void merge_sdfp(uint8_t *to, struct sdfp_node *cn, uintptr_t start,
-		       uintptr_t end)
+static struct sdfp_node *new_node(void *buf, uintptr_t start, uintptr_t end)
 {
-	// Need to allocate and copy a new buffer.
-	const uintptr_t new_start = min(start, cn->start);
-	const uintptr_t new_end = max(end, cn->end);
-	uint8_t *buf = sdfp_malloc(new_end - new_start);
-	if (!buf) {
-		printk(KERN_ALERT "Malloc failure in merge_sdfp()");
-		return;
+	struct sdfp_node *nn = kmalloc(sizeof(struct sdfp_node), GFP_KERNEL);
+	if (!nn) {
+		return 0;
 	}
-	// First copy over from to, then from cn->buf so data gets
-	// overwritten with original data. Yes, this may be slightly
-	// inefficient.
-	memcpy(&buf[start - new_start], &to[0], end - start);
-	memcpy(&buf[cn->start - new_start], &cn->buf[0], cn->end - cn->start);
-	sdfp_free(cn->buf);
-	cn->buf = buf;
-	cn->start = new_start;
-	cn->end = new_end;
-	sdfp_memcheck();
+	nn->start = start;
+	nn->end = end;
+	nn->buf = kmalloc(end - start, GFP_KERNEL);
+	if (!nn->buf) {
+		kfree(nn);
+		return 0;
+	}
+	memcpy(&nn->buf[0], buf, end - start);
+	return nn;
 }
-/**
-   Merge any overlapping sdfp list nodes.
-*/
-static void coalesce(void)
+static bool data_check(struct sdfp_node *nn)
 {
+	const int nr = syscall_get_nr(current, current_pt_regs());
 	struct sdfp_node *cn = current->sdfp_list;
-	struct sdfp_node *nn = 0;
-	if (cn) {
-		nn = cn->next;
+	bool ret = false;
+	while (cn) {
+		if ((cn->start < nn->end) && (cn->end > nn->start)) {
+			uintptr_t ostart = max(cn->start, nn->start);
+			uintptr_t oend = min(cn->end, nn->end);
+			// There is an overlap.
+			num_multis[nr]++;
+			if (!test_and_set_bit(nr, sdfp_multiread_reported))
+				printk(KERN_ALERT
+				       "Multi-read detected in pid %d syscall %d",
+				       current->pid, nr);
+			if (memcmp(&cn->buf[ostart - cn->start],
+				   &nn->buf[ostart - nn->start],
+				   oend - ostart)) {
+				memcpy(&nn->buf[ostart - nn->start],
+				       &cn->buf[ostart - cn->start],
+				       oend - ostart);
+				ret = true;
+			}
+		}
+		cn = cn->next;
 	}
+	return ret;
+}
+
+/**
+   Add a new node to the current->sdfp_list;
+ */
+static void add_node(struct sdfp_node *cn)
+{
+	struct sdfp_node *nn = current->sdfp_list;
+	cn->next = nn;
+	current->sdfp_list = cn;
 	while (cn && nn) {
-		if ((cn->start >= nn->end) || (nn->start >= cn->end)) {
+		if ((cn->start > nn->end) || (nn->start > cn->end)) {
 			cn = nn;
 			nn = cn->next;
 		} else {
 			uintptr_t start = min(cn->start, nn->start);
 			uintptr_t end = max(cn->end, nn->end);
-			unsigned new_size = end - start;
-			uint8_t *buf = sdfp_malloc(new_size);
-			memcpy(&buf[cn->start - start], &cn->buf[0], cn->end - cn->start);
-			memcpy(&buf[nn->start - start], &nn->buf[0], nn->end - nn->start);
-			sdfp_free(nn->buf);
+			unsigned sz = end - start;
+			uint8_t *buf = kmalloc(sz, GFP_KERNEL);
+			memcpy(&buf[cn->start - start], &cn->buf[0],
+			       cn->end - cn->start);
+			memcpy(&buf[nn->start - start], &nn->buf[0],
+			       nn->end - nn->start);
+			kfree(nn->buf);
 			cn->next = nn->next;
-			sdfp_free(nn);
-			sdfp_free(cn->buf);
+			kfree(nn);
+			nn = 0;
+			kfree(cn->buf);
 			cn->buf = buf;
 			cn->start = start;
 			cn->end = end;
-			cn=current->sdfp_list; // Start over
-			nn=cn->next;
-			sdfp_memcheck();
+			cn = current->sdfp_list;
+			if (cn)
+				nn = cn->next;
 		}
 	}
-}
-/**
-   Merging already happened, so if there is an overlap it is fully
-   contained in a `sdfp_node` buf.
-*/
-static void df_check(uint8_t *to, uintptr_t start, uintptr_t end)
-{
-	struct sdfp_node *cn = current->sdfp_list;
-	while (cn) {
-		if ((end <= cn->start) ||
-		    (start >= cn->end)) { // no overlap with this cn
-			cn = cn->next;
-			continue;
-		}
-		if (memcmp(to, &cn->buf[start - cn->start], end - start) == 0) {
-			break; // Double fetch attack not seen.
-		}
-		memcpy(to, &cn->buf[cn->start - start], end - start);
-		printk(KERN_ALERT
-		       "SDFP double fetch protected in pid %d syscall %d",
-		       current->pid,
-		       syscall_get_nr(current, current_pt_regs()));
-		if (sdfp_kill_doublefetch) {
-			printk(KERN_ALERT "SDFP: Killing pid %d", current->pid);
-		}
-	}
-	sdfp_memcheck();
 }
 
-/*
- * Return true if there was a node overlap with `to` buf.
- */
-static bool overlap_check(uint8_t *to, struct sdfp_node *cn, uintptr_t start,
-			  uintptr_t end)
-{
-	const int nr = syscall_get_nr(current, current_pt_regs());
-	if ((start > cn->end) || (end < cn->start))
-		return false;
-	num_multis[nr] += 1; // Some kind of multi-fetch happened.
-	if (!test_and_set_bit(nr, sdfp_multiread_reported))
-		printk(KERN_ALERT "SDFP multiread seen in pid %d syscall %d",
-		       current->pid, nr);
-	if (start < cn->start || end > cn->end) {
-		merge_sdfp(to, cn, start,
-			   end); // We gotta reallocate the cn->buf.
-		coalesce();
-	}
-	df_check(to, start, end);
-	return true;
-}
 /**
  * sdfp_check - Check for double fetch attacks.
  * @to: Result location
@@ -287,11 +220,11 @@ static bool overlap_check(uint8_t *to, struct sdfp_node *cn, uintptr_t start,
  *
  *
  * At this point, n bytes have already been copied to `to`.  This
- * ensures that we can check and fix `n` bytes without a fault.
+ * ensures that we can check and fix `n` bytes without a fault. The
+ * `from` is only used to get the `start` and `end` addresses.
  *
- * If the data hasn't been seen before, copy the data into a sdfp_node on `current`.
- *
- * If data has been seen before (in this syscall), make sure it hasn't changed.
+ * If data has been seen before (in this syscall), make sure it hasn't
+ * changed.
  *
  * If data has changed and the syscall isn't in `sdfp_ignored_calls`,
  * overwrite with saved data. Send a SIGKILL if `sdfp_kill` is set.
@@ -300,11 +233,9 @@ static bool overlap_check(uint8_t *to, struct sdfp_node *cn, uintptr_t start,
 void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 {
 	int nr = syscall_get_nr(current, current_pt_regs());
-	bool merged = false;
-	struct sdfp_node *cn = current->sdfp_list;
+	uintptr_t start = (uintptr_t)from;
+	uintptr_t end = start + n;
 	struct sdfp_node *nn = 0;
-	const uintptr_t start = (uintptr_t)from;
-	const uintptr_t end = start + n;
 	if (sdfp_no_check)
 		return;
 	if (nr < 0 || nr >= NR_syscalls) {
@@ -313,39 +244,37 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 	} else if (test_bit(nr, sdfp_ignored_calls))
 		return;
 	num_bytes[nr] += n;
-	while (cn && !merged) {
-		// Look for overlaps and merges. Check bytes if overlaps.
-		merged = overlap_check(to, cn, start, end);
-		cn = cn->next;
+	nn = new_node((void *)to, start, end);
+	if (!nn) {
+		printk(KERN_ALERT "Malloc failure in new node\n");
+		sdfp_clear(current);
+		return;
 	}
-	if (!merged) {
-		// No
-		nn = sdfp_malloc(sizeof(struct sdfp_node));
-		if (!nn)
-			goto malloc_failed;
-		nn->buf = sdfp_malloc(n);
-		if (!nn->buf)
-			goto malloc_failed;
-		memcpy(nn->buf, to, n);
-		nn->next = current->sdfp_list;
-		nn->start = start;
-		nn->end = end;
-		current->sdfp_list = nn;
+	if (data_check(nn)) {
+		printk(KERN_ALERT "Double fetch detected in pid %d syscall %d",
+		       current->pid, nr);
+		memcpy((void *)to, nn->buf, n);
+		if (sdfp_kill_doublefetch) {
+			printk(KERN_ALERT "SDFP: Killing pid %d", current->pid);
+			force_sig(SIGKILL);
+		}
 	}
-	return;
-malloc_failed:
-	sdfp_free(nn);
-	printk(KERN_ALERT "malloc failed in sdfp_check");
+	add_node(nn);
 }
 EXPORT_SYMBOL(sdfp_check);
+
+/**
+   Clear the sdfp_list from task `tsk`. Called at the beginning of a
+   syscall (on current) or when a task_struct is being cleaned up.
+ */
 void sdfp_clear(struct task_struct *tsk)
 {
 	struct sdfp_node *cn = tsk->sdfp_list;
 	tsk->sdfp_list = 0;
 	while (cn) {
 		struct sdfp_node *nn = cn->next;
-		sdfp_free(cn->buf);
-		sdfp_free(cn);
+		kfree(cn->buf);
+		kfree(cn);
 		cn = nn;
 	}
 }
