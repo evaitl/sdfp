@@ -198,14 +198,12 @@ static void add_node(struct sdfp_node *cn)
 			kfree(nn->buf);
 			cn->next = nn->next;
 			kfree(nn);
-			nn = 0;
 			kfree(cn->buf);
 			cn->buf = buf;
 			cn->start = start;
 			cn->end = end;
 			cn = current->sdfp_list;
-			if (cn)
-				nn = cn->next;
+			nn = cn->next;
 		}
 	}
 }
@@ -238,8 +236,14 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 	struct sdfp_node *nn = 0;
 	if (sdfp_no_check)
 		return;
+	if (get_current_state() != TASK_RUNNING) {
+		printk(KERN_ALERT "SDFP task not running");
+		return;
+	}
 	if (nr < 0 || nr >= NR_syscalls) {
-		printk(KERN_ALERT "SDFP bad syscall number: %d", nr);
+		printk(KERN_ALERT "SDFP bad syscall number: %d, state %d", nr,
+		       get_current_state());
+
 		return;
 	} else if (test_bit(nr, sdfp_ignored_calls))
 		return;
