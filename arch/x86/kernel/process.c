@@ -89,7 +89,9 @@ int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
 #ifdef CONFIG_VM86
 	dst->thread.vm86 = NULL;
 #endif
+#ifdef CONFIG_DEBUG_SDFP
 	dst->sdfp_list=0;
+#endif
 	/* Drop the copied pointer to current's fpstate */
 	dst->thread.fpu.fpstate = NULL;
 
