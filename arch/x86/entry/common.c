@@ -78,7 +78,7 @@ __visible noinstr void do_syscall_64(struct pt_regs *regs, int nr)
 	instrumentation_begin();
 
 #ifdef CONFIG_DEBUG_SDFP
-        sdfp_clear(current);
+        sdfp_clear(current,nr);
 #endif
 	if (!do_syscall_x64(regs, nr) && !do_syscall_x32(regs, nr) && nr != -1) {
 		/* Invalid system call, but still a system call. */
@@ -133,7 +133,7 @@ __visible noinstr void do_int80_syscall_32(struct pt_regs *regs)
 	instrumentation_begin();
 
 #ifdef CONFIG_DEBUG_SDFP
-        sdfp_clear(current);
+        sdfp_clear(current,nr);
 #endif
 	do_syscall_32_irqs_on(regs, nr);
 
@@ -157,7 +157,7 @@ static noinstr bool __do_fast_syscall_32(struct pt_regs *regs)
 	instrumentation_begin();
 
 #ifdef CONFIG_DEBUG_SDFP
-        sdfp_clear(current);
+        sdfp_clear(current,nr);
 #endif
 
 	/* Fetch EBP from where the vDSO stashed it. */

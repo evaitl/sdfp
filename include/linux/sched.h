@@ -953,6 +953,7 @@ struct task_struct {
 
 #ifdef CONFIG_DEBUG_SDFP
         struct sdfp_node *sdfp_list;
+	int sdfp_nr;
 #endif
 #ifdef CONFIG_STACKPROTECTOR
 	/* Canary value for the -fstack-protector GCC feature: */

@@ -454,7 +454,7 @@ void free_task(struct task_struct *tsk)
 	release_user_cpus_ptr(tsk);
 	scs_release(tsk);
 #ifdef CONFIG_DEBUG_SDFP
-        sdfp_clear(tsk);
+        sdfp_clear(tsk,-1);
 #endif
 #ifndef CONFIG_THREAD_INFO_IN_TASK
 	/*

@@ -148,7 +148,7 @@ static struct sdfp_node *new_node(void *buf, uintptr_t start, uintptr_t end)
 }
 static bool data_check(struct sdfp_node *nn)
 {
-	const int nr = syscall_get_nr(current, current_pt_regs());
+	const int nr = current->sdfp_nr;
 	struct sdfp_node *cn = current->sdfp_list;
 	bool ret = false;
 	while (cn) {
@@ -231,7 +231,7 @@ static void add_node(struct sdfp_node *cn)
  */
 void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 {
-	int nr = syscall_get_nr(current, current_pt_regs());
+	int nr = current->sdfp_nr;
 	uintptr_t start = (uintptr_t)from;
 	uintptr_t end = start + n;
 	struct sdfp_node *nn = 0;
@@ -248,7 +248,7 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 	nn = new_node((void *)to, start, end);
 	if (!nn) {
 		printk(KERN_ALERT "Malloc failure in new node\n");
-		sdfp_clear(current);
+		sdfp_clear(current,nr);
 		return;
 	}
 	if (data_check(nn)) {
@@ -268,7 +268,7 @@ EXPORT_SYMBOL(sdfp_check);
    Clear the sdfp_list from task `tsk`. Called at the beginning of a
    syscall (on current) or when a task_struct is being cleaned up.
  */
-void sdfp_clear(struct task_struct *tsk)
+void sdfp_clear(struct task_struct *tsk, int nr)
 {
 	struct sdfp_node *cn = tsk->sdfp_list;
 	tsk->sdfp_list = 0;
@@ -278,5 +278,6 @@ void sdfp_clear(struct task_struct *tsk)
 		kfree(cn);
 		cn = nn;
 	}
+	tsk->sdfp_nr=nr;
 }
 EXPORT_SYMBOL(sdfp_clear);
