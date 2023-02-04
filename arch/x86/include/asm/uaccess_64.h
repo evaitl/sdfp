@@ -28,7 +28,8 @@ static __always_inline __must_check unsigned long
 copy_user_generic(void *to, const void *from, unsigned len)
 {
 	unsigned ret;
-
+	void *sv_to=to;
+	const void *sv_from=from;
 	/*
 	 * If CPU has ERMS feature, use copy_user_enhanced_fast_string.
 	 * Otherwise, if CPU has rep_good feature, use copy_user_generic_string.
@@ -44,7 +45,7 @@ copy_user_generic(void *to, const void *from, unsigned len)
 			 "1" (to), "2" (from), "3" (len)
 			 : "memory", "rcx", "r8", "r9", "r10", "r11");
 #ifdef CONFIG_DEBUG_SDFP
-        sdfp_check(to,from,len-ret);
+        sdfp_check(sv_to,sv_from,len-ret);
 #endif
 	return ret;
 }

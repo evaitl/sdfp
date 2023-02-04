@@ -142,7 +142,8 @@ static struct sdfp_node *new_node(void *buf, uintptr_t start, uintptr_t end)
 		kfree(nn);
 		return 0;
 	}
-	memcpy(&nn->buf[0], buf, end - start);
+	//	memcpy(&nn->buf[0], buf, end - start);
+	printk(KERN_WARNING "copying from %lx to %lx at %p (%ld)",start,end,buf,(end-start));
 	return nn;
 }
 static bool data_check(struct sdfp_node *nn)
@@ -182,6 +183,7 @@ static void add_node(struct sdfp_node *cn)
 	struct sdfp_node *nn = current->sdfp_list;
 	cn->next = nn;
 	current->sdfp_list = cn;
+#if 0	
 	while (cn && nn) {
 		if ((cn->start > nn->end) || (nn->start > cn->end)) {
 			cn = nn;
@@ -206,6 +208,7 @@ static void add_node(struct sdfp_node *cn)
 			nn = cn->next;
 		}
 	}
+#endif
 }
 
 /**
@@ -254,15 +257,17 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 		sdfp_clear(current);
 		return;
 	}
+#if 0	
 	if (data_check(nn)) {
-		printk(KERN_ALERT "Double fetch detected in pid %d syscall %d",
-		       current->pid, nr);
+		printk(KERN_ALERT "Double fetch detected in pid %d syscall %d bytes %ld",
+		       current->pid, nr, n);		
 		memcpy((void *)to, nn->buf, n);
 		if (sdfp_kill_doublefetch) {
 			printk(KERN_ALERT "SDFP: Killing pid %d", current->pid);
 			force_sig(SIGKILL);
 		}
 	}
+#endif	
 	add_node(nn);
 }
 EXPORT_SYMBOL(sdfp_check);
