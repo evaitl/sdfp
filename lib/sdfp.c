@@ -33,7 +33,7 @@ struct dentry *sdfp_dir;
    1. syscall number
    2. enabled or not (bool)
    3. number of multi reads
-   4. Number of bytes read. 
+   4. Number of bytes read.
 
 */
 static ssize_t stats_write(struct file *file, const char __user *ubuf,
@@ -143,9 +143,18 @@ static struct sdfp_node *new_node(void *buf, uintptr_t start, uintptr_t end)
 		return 0;
 	}
 	memcpy(&nn->buf[0], buf, end - start);
-	//	printk(KERN_WARNING "copying from %lx to %lx at %p (%ld)",start,end,buf,(end-start));
 	return nn;
 }
+/**
+   data_check() - Check a new sdfp_node for multi-reads
+   @nn: the node to check
+
+   See if there are any overlaps with something on
+   &current->sdfp_list. If so, overwrite @nn->buf with original data.
+
+   RETURNS:
+   %true if there was a mult-read.
+ */
 static bool data_check(struct sdfp_node *nn)
 {
 	const int nr = current->sdfp_nr;
@@ -153,13 +162,13 @@ static bool data_check(struct sdfp_node *nn)
 	bool ret = false;
 	while (cn) {
 		if ((cn->start < nn->end) && (cn->end > nn->start)) {
+			// There is an overlap.
 			uintptr_t ostart = max(cn->start, nn->start);
 			uintptr_t oend = min(cn->end, nn->end);
-			// There is an overlap.
 			num_multis[nr]++;
 			if (!test_and_set_bit(nr, sdfp_multiread_reported))
 				printk(KERN_ALERT
-				       "Multi-read detected in pid %d syscall %d",
+				       "SDFP: Multi-read detected in pid %d syscall %d",
 				       current->pid, nr);
 			if (memcmp(&cn->buf[ostart - cn->start],
 				   &nn->buf[ostart - nn->start],
@@ -238,7 +247,7 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 	if (!n || sdfp_no_check)
 		return;
 	if (nr < 0 || nr >= NR_syscalls) {
-		printk(KERN_ALERT "SDFP bad syscall number: %d, state %d", nr,
+		printk(KERN_ALERT "SDFP: bad syscall number: %d, state %d", nr,
 		       get_current_state());
 
 		return;
@@ -247,13 +256,14 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 	num_bytes[nr] += n;
 	nn = new_node((void *)to, start, end);
 	if (!nn) {
-		printk(KERN_ALERT "Malloc failure in new node\n");
-		sdfp_clear(current,nr);
+		printk(KERN_ALERT "SDFP: Malloc failure in new node\n");
+		sdfp_clear(current, nr);
 		return;
 	}
 	if (data_check(nn)) {
-		printk(KERN_ALERT "Double fetch detected in pid %d syscall %d bytes %ld",
-		       current->pid, nr, n);		
+		printk(KERN_ALERT
+		       "SDFP: Modifed multi detected in pid %d syscall %d bytes %ld",
+		       current->pid, nr, n);
 		memcpy((void *)to, nn->buf, n);
 		if (sdfp_kill_doublefetch) {
 			printk(KERN_ALERT "SDFP: Killing pid %d", current->pid);
@@ -278,6 +288,6 @@ void sdfp_clear(struct task_struct *tsk, int nr)
 		kfree(cn);
 		cn = nn;
 	}
-	tsk->sdfp_nr=nr;
+	tsk->sdfp_nr = nr;
 }
 EXPORT_SYMBOL(sdfp_clear);
