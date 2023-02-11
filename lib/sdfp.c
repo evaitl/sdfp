@@ -16,8 +16,8 @@ static bool sdfp_no_check = 1;
 static bool sdfp_kill_doublefetch = 0;
 static DECLARE_BITMAP(sdfp_ignored_calls, NR_syscalls) = { 0 };
 static DECLARE_BITMAP(sdfp_multiread_reported, NR_syscalls) = { 0 };
-static unsigned num_multis[NR_syscalls];
-static unsigned long num_bytes[NR_syscalls];
+static atomic_t num_multis[NR_syscalls];
+static atomic64_t num_bytes[NR_syscalls];
 struct dentry *sdfp_dir;
 
 /**
@@ -54,8 +54,9 @@ static ssize_t stats_read(struct file *file, char __user *ubuf, size_t count,
 	while (nr < NR_syscalls && count > STATS_LEN) {
 		bool enabled = test_bit(nr, sdfp_ignored_calls);
 		memset(buf, 0, sizeof(buf));
-		snprintf(buf, sizeof(buf), "%4u\t%2u\t%8u\t%12lu\n", nr,
-			 enabled, num_multis[nr], num_bytes[nr]);
+		snprintf(buf, sizeof(buf), "%4u\t%2u\t%8u\t%12llu\n", nr,
+			 enabled, atomic_read(&num_multis[nr]),
+                         atomic64_read(&num_bytes[nr]));
 		if (copy_to_user(ubuf, buf, STATS_LEN)) {
 			break;
 		}
@@ -165,7 +166,7 @@ static bool data_check(struct sdfp_node *nn)
 			// There is an overlap.
 			uintptr_t ostart = max(cn->start, nn->start);
 			uintptr_t oend = min(cn->end, nn->end);
-			num_multis[nr]++;
+			atomic_inc(&num_multis[nr]);
 			if (!test_and_set_bit(nr, sdfp_multiread_reported))
 				printk(KERN_ALERT
 				       "SDFP: Multi-read detected in pid %d syscall %d",
@@ -253,7 +254,7 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 		return;
 	} else if (test_bit(nr, sdfp_ignored_calls))
 		return;
-	num_bytes[nr] += n;
+	atomic64_add(n,&num_bytes[nr]);
 	nn = new_node((void *)to, start, end);
 	if (!nn) {
 		printk(KERN_ALERT "SDFP: Malloc failure in new node\n");
