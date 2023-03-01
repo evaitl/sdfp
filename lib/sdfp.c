@@ -11,6 +11,16 @@
 #include <linux/sched/task_stack.h>
 #include <linux/export.h>
 #include <linux/debugfs.h>
+#include <linux/hashtable.h>
+
+static atomic64_t num_syscalls;
+static DEFINE_MUTEX(sizes_lock);
+struct stats_sizes_t {
+	struct hlist_node node;
+	int size;
+	int count;
+};
+static DEFINE_HASHTABLE(stats_sizes, 6);
 
 static bool sdfp_no_check = 1;
 static bool sdfp_kill_doublefetch = 0;
@@ -20,6 +30,80 @@ static atomic_t num_multis[NR_syscalls];
 static atomic64_t num_bytes[NR_syscalls];
 struct dentry *sdfp_dir;
 
+static void add_size_stat(int size)
+{
+	struct stats_sizes_t *cur;
+	bool found = false;
+	mutex_lock(&sizes_lock);
+	hash_for_each_possible (stats_sizes, cur, node, size) {
+		if (cur->size == size) {
+			cur->count++;
+			found = true;
+			break;
+		}
+	}
+	if (!found) {
+		struct stats_sizes_t *ss = kmalloc(sizeof(*ss), GFP_KERNEL);
+		if (ss) {
+			ss->size = size;
+			ss->count = 1;
+			hash_add(stats_sizes, &ss->node, size);
+		} else {
+			printk(KERN_ALERT "OOM in sdfp stats");
+		}
+	}
+	mutex_unlock(&sizes_lock);
+}
+static void reset_sizes(void)
+{
+	int bkt;
+	struct hlist_node *thn;
+	struct stats_sizes_t *ss;
+	mutex_lock(&sizes_lock);
+	hash_for_each_safe (stats_sizes, bkt, thn, ss, node) {
+		hlist_del(&ss->node);
+		kfree(ss);
+	}
+	mutex_unlock(&sizes_lock);
+	atomic64_set(&num_syscalls, 0);
+}
+#define SIZES_LEN 50
+static ssize_t sizes_read(struct file *file, char __user *ubuf, size_t count,
+			  loff_t *ppos)
+{
+	int bkt = 0;
+	struct stats_sizes_t *cur = 0;
+	ssize_t res = 0;
+	char buf[SIZES_LEN + 1];
+	memset(buf, 0, sizeof(buf));
+	if (count > SIZES_LEN) {
+		int len = snprintf(buf, sizeof(buf), "no syscalls: %lld\n",
+				   atomic64_read(&num_syscalls));
+		if (copy_to_user(ubuf, buf, len)) {
+			return -EIO;
+		}
+		ubuf += len;
+		*ppos += len;
+		res += len;
+		count -= len;
+	}
+	mutex_lock(&sizes_lock);
+	hash_for_each (stats_sizes, bkt, cur, node) {
+		int len = snprintf(buf, sizeof(buf), "%d: %d\n", cur->size,
+				   cur->count);
+		if (copy_to_user(ubuf, buf, len)) {
+			return -EIO;
+		}
+		ubuf += len;
+		*ppos += len;
+		res += len;
+		count -= len;
+		if (count < SIZES_LEN) {
+			break;
+		}
+	}
+	mutex_unlock(&sizes_lock);
+}
 /**
    For stats, all writes will reset the stats data.
 
@@ -41,6 +125,7 @@ static ssize_t stats_write(struct file *file, const char __user *ubuf,
 {
 	memset(num_multis, 0, sizeof(num_multis));
 	memset(num_bytes, 0, sizeof(num_bytes));
+	atomic64_set(&num_syscalls, 0);
 	bitmap_zero(sdfp_multiread_reported, NR_syscalls);
 	return count;
 }
@@ -56,7 +141,7 @@ static ssize_t stats_read(struct file *file, char __user *ubuf, size_t count,
 		memset(buf, 0, sizeof(buf));
 		snprintf(buf, sizeof(buf), "%4u\t%2u\t%8u\t%12llu\n", nr,
 			 enabled, atomic_read(&num_multis[nr]),
-                         atomic64_read(&num_bytes[nr]));
+			 atomic64_read(&num_bytes[nr]));
 		if (copy_to_user(ubuf, buf, STATS_LEN)) {
 			break;
 		}
@@ -254,7 +339,7 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 		return;
 	} else if (test_bit(nr, sdfp_ignored_calls))
 		return;
-	atomic64_add(n,&num_bytes[nr]);
+	atomic64_add(n, &num_bytes[nr]);
 	nn = new_node((void *)to, start, end);
 	if (!nn) {
 		printk(KERN_ALERT "SDFP: Malloc failure in new node\n");
