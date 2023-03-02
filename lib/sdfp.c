@@ -103,7 +103,15 @@ static ssize_t sizes_read(struct file *file, char __user *ubuf, size_t count,
 		}
 	}
 	mutex_unlock(&sizes_lock);
+	return res;
 }
+static ssize_t sizes_write(struct file *file, const char __user *ubuf,
+			   size_t count, loff_t *ppos)
+{
+	reset_sizes();
+	return count;
+}
+
 /**
    For stats, all writes will reset the stats data.
 
@@ -191,6 +199,10 @@ static ssize_t enable_write(struct file *file, const char __user *ubuf,
 	*ppos += count;
 	return count;
 }
+const static struct file_operations sizes_fops = {
+	.read = sizes_read,
+	.write = sizes_write,
+};
 const static struct file_operations enable_fops = {
 	.write = enable_write,
 };
@@ -211,6 +223,7 @@ static int __init sdfp_init(void)
 	debugfs_create_file("stats", 0600, sdfp_dir, 0, &stat_fops);
 	debugfs_create_file("enable", 0200, sdfp_dir, 0, &enable_fops);
 	debugfs_create_file("disable", 0200, sdfp_dir, 0, &disable_fops);
+	debugfs_create_file("sizes", 0600, sdfp_dir, 0, &sizes_fops);
 	return 0;
 }
 module_init(sdfp_init);
@@ -330,6 +343,7 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 	uintptr_t start = (uintptr_t)from;
 	uintptr_t end = start + n;
 	struct sdfp_node *nn = 0;
+	add_size_stat(n);
 	if (!n || sdfp_no_check)
 		return;
 	if (nr < 0 || nr >= NR_syscalls) {
