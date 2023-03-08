@@ -75,31 +75,40 @@ static ssize_t sizes_read(struct file *file, char __user *ubuf, size_t count,
 	struct stats_sizes_t *cur = 0;
 	ssize_t res = 0;
 	char buf[SIZES_LEN + 1];
+	loff_t pos = 0;
+	int copied = 0;
 	memset(buf, 0, sizeof(buf));
 	if (count > SIZES_LEN) {
 		int len = snprintf(buf, sizeof(buf), "no syscalls: %lld\n",
 				   atomic64_read(&num_syscalls));
-		if (copy_to_user(ubuf, buf, len)) {
-			return -EIO;
+		pos += len;
+		if (pos >= *ppos) {
+			copied = len - copy_to_user(ubuf, buf, len);
+			ubuf += copied;
+			*ppos += copied;
+			res += copied;
+			count -= copied;
+			pos = pos - len + copied;
 		}
-		ubuf += len;
-		*ppos += len;
-		res += len;
-		count -= len;
 	}
 	mutex_lock(&sizes_lock);
 	hash_for_each (stats_sizes, bkt, cur, node) {
-		int len = snprintf(buf, sizeof(buf), "%d: %d\n", cur->size,
-				   cur->count);
-		if (copy_to_user(ubuf, buf, len)) {
-			return -EIO;
-		}
-		ubuf += len;
-		*ppos += len;
-		res += len;
-		count -= len;
 		if (count < SIZES_LEN) {
 			break;
+		}
+		int len = snprintf(buf, sizeof(buf), "%d: %d\n", cur->size,
+				   cur->count);
+		pos += len;
+		if (pos >= *ppos) {
+			copied = len - copy_to_user(ubuf, buf, len);
+			ubuf += copied;
+			*ppos += copied;
+			res += copied;
+			count -= copied;
+			pos = pos - len + copied;
+			if (copied == 0) {
+				break;
+			}
 		}
 	}
 	mutex_unlock(&sizes_lock);
@@ -389,5 +398,8 @@ void sdfp_clear(struct task_struct *tsk, int nr)
 		cn = nn;
 	}
 	tsk->sdfp_nr = nr;
+	if (nr >= 0) {
+		atomic64_inc(&num_syscalls);
+	}
 }
 EXPORT_SYMBOL(sdfp_clear);
