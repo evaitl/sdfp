@@ -352,7 +352,9 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 	uintptr_t start = (uintptr_t)from;
 	uintptr_t end = start + n;
 	struct sdfp_node *nn = 0;
-	add_size_stat(n);
+	if (!test_bit(nr, sdfp_ignored_calls)) {
+		add_size_stat(n);
+	}
 	if (!n || sdfp_no_check)
 		return;
 	if (nr < 0 || nr >= NR_syscalls) {
