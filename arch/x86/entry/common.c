@@ -87,7 +87,7 @@ __visible noinstr void do_syscall_64(struct pt_regs *regs, int nr)
 	}
 
 #ifdef CONFIG_DEBUG_SDFP
-	sdfp_clear(current, -1);
+	sdfp_clear(current, nr);
 #endif
 	instrumentation_end();
 	syscall_exit_to_user_mode(regs);
@@ -140,8 +140,9 @@ __visible noinstr void do_int80_syscall_32(struct pt_regs *regs)
 	sdfp_clear(current, nr);
 #endif
 	do_syscall_32_irqs_on(regs, nr);
+
 #ifdef CONFIG_DEBUG_SDFP
-	sdfp_clear(current, -1);
+	sdfp_clear(current, nr);
 #endif
 
 	instrumentation_end();
@@ -187,8 +188,9 @@ static noinstr bool __do_fast_syscall_32(struct pt_regs *regs)
 		regs->ax = -EFAULT;
 
 		local_irq_disable();
+                
 #ifdef CONFIG_DEBUG_SDFP
-		sdfp_clear(current, -1);
+		sdfp_clear(current, nr);
 #endif
 		instrumentation_end();
 		irqentry_exit_to_user_mode(regs);
@@ -200,7 +202,7 @@ static noinstr bool __do_fast_syscall_32(struct pt_regs *regs)
 	/* Now this is just like a normal syscall. */
 	do_syscall_32_irqs_on(regs, nr);
 #ifdef CONFIG_DEBUG_SDFP
-	sdfp_clear(current, -1);
+	sdfp_clear(current, nr);
 #endif
 
 	instrumentation_end();
