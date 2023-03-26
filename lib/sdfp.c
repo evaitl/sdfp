@@ -190,7 +190,10 @@ static bool data_check(struct sdfp_node *nn)
  */
 static void add_node(struct sdfp_node *cn)
 {
-	struct sdfp_node *nn = current->sdfp_list;
+	struct sdfp_node *nn = 0;
+	struct mutex *lock=&current->sdfp_lock;
+	mutex_lock(lock);
+	nn = current->sdfp_list;
 	cn->next = nn;
 	current->sdfp_list = cn;
 	while (cn && nn) {
@@ -217,6 +220,7 @@ static void add_node(struct sdfp_node *cn)
 			nn = cn->next;
 		}
 	}
+	mutex_unlock(lock);
 }
 
 /**
@@ -245,7 +249,7 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 	uintptr_t start = (uintptr_t)from;
 	uintptr_t end = start + n;
 	struct sdfp_node *nn = 0;
-	if (!n || sdfp_no_check)
+	if (!n || sdfp_no_check || pagefault_disabled())
 		return;
 	if (nr < 0 || nr >= NR_syscalls) {
 		printk(KERN_ALERT "SDFP: bad syscall number: %d, state %d", nr,
@@ -281,8 +285,12 @@ EXPORT_SYMBOL(sdfp_check);
  */
 void sdfp_clear(struct task_struct *tsk, int nr)
 {
-	struct sdfp_node *cn = tsk->sdfp_list;
+	struct mutex *lock=&tsk->sdfp_lock;
+	struct sdfp_node *cn=0;
+	mutex_lock(lock);
+	cn = tsk->sdfp_list;
 	tsk->sdfp_list = 0;
+	mutex_unlock(lock);
 	while (cn) {
 		struct sdfp_node *nn = cn->next;
 		kfree(cn->buf);
