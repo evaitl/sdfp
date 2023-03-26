@@ -455,6 +455,7 @@ void free_task(struct task_struct *tsk)
 	scs_release(tsk);
 #ifdef CONFIG_DEBUG_SDFP
         sdfp_clear(tsk,-1);
+	mutex_destroy(&tsk->sdfp_lock);
 #endif
 #ifndef CONFIG_THREAD_INFO_IN_TASK
 	/*
