@@ -250,7 +250,7 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 	nn = new_node((void *)to, start, end);
 	if (!nn) {
 		printk(KERN_ALERT "SDFP: Malloc failure in new node\n");
-		mutex_unlock(&lock);
+		mutex_unlock(lock);
 		sdfp_clear(current, nr);
 		return;
 	}
@@ -265,7 +265,7 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 		}
 	}
 	add_node(nn);
-	mutex_unlock(&lock);
+	mutex_unlock(lock);
 }
 EXPORT_SYMBOL(sdfp_check);
 
