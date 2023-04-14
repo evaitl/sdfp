@@ -130,19 +130,28 @@ static int __init sdfp_init(void)
 }
 module_init(sdfp_init);
 
+/**
+   Create a new node, or use the static node.
+
+   Static node is unused if it's start is 0. 
+ */
 static struct sdfp_node *new_node(void *buf, uintptr_t start, uintptr_t end)
 {
-	struct sdfp_node *nn = kmalloc(sizeof(struct sdfp_node), GFP_KERNEL);
-	if (!nn) {
-		return 0;
+	struct sdfp_node *nn = current->sdfp_list;
+	if (nn->start) {
+		// Static node is in use, create a new node.
+		nn = kmalloc(sizeof(struct sdfp_node), GFP_KERNEL);
+		if (!nn) {
+			return 0;
+		}
+		nn->buf = kmalloc(end - start, GFP_KERNEL);
+		if (!nn->buf) {
+			kfree(nn);
+			return 0;
+		}
 	}
 	nn->start = start;
 	nn->end = end;
-	nn->buf = kmalloc(end - start, GFP_KERNEL);
-	if (!nn->buf) {
-		kfree(nn);
-		return 0;
-	}
 	memcpy(&nn->buf[0], buf, end - start);
 	return nn;
 }
@@ -153,19 +162,19 @@ static struct sdfp_node *new_node(void *buf, uintptr_t start, uintptr_t end)
    See if there are any overlaps with something on
    &current->sdfp_list. If so, overwrite @nn->buf with original data.
 
+   nn may be in static node, don't trip on that.
+   
    RETURNS:
    %true if there was a mult-read.
  */
 static bool data_check(struct sdfp_node *nn)
 {
 	const int nr = current->sdfp_nr;
-	struct sdfp_node *cn = 0;
-	struct mutex *lock = &current->sdfp_lock;
-	mutex_lock(lock);
-	cn = current->sdfp_list;
+	struct sdfp_node *cn = current->sdfp_list;
 	bool ret = false;
 	while (cn) {
-		if ((cn->start < nn->end) && (cn->end > nn->start)) {
+		if ((cn != nn) && (cn->start < nn->end) &&
+		    (cn->end > nn->start)) {
 			// There is an overlap.
 			uintptr_t ostart = max(cn->start, nn->start);
 			uintptr_t oend = min(cn->end, nn->end);
@@ -185,49 +194,19 @@ static bool data_check(struct sdfp_node *nn)
 		}
 		cn = cn->next;
 	}
-	mutex_unlock(lock);
 	return ret;
 }
 
 /**
-   Add a new node to the current->sdfp_list;
+   Add a new node to the `current->sdfp_list` after the static node. 
  */
-static void add_node(struct sdfp_node *cn)
+static void add_node(struct sdfp_node *nn)
 {
-	struct sdfp_node *nn = 0;
-	struct mutex *lock = &current->sdfp_lock;
-	mutex_lock(lock);
-	nn = current->sdfp_list;
-	cn->next = nn;
-	current->sdfp_list = cn;
-#if 0	
-	// Merge nodes -- saves space, keeps list short, takes longer?
-	while (cn && nn) {
-		if ((cn->start > nn->end) || (nn->start > cn->end)) {
-			cn = nn;
-			nn = cn->next;
-		} else {
-			uintptr_t start = min(cn->start, nn->start);
-			uintptr_t end = max(cn->end, nn->end);
-			unsigned sz = end - start;
-			uint8_t *buf = kmalloc(sz, GFP_KERNEL);
-			memcpy(&buf[cn->start - start], &cn->buf[0],
-			       cn->end - cn->start);
-			memcpy(&buf[nn->start - start], &nn->buf[0],
-			       nn->end - nn->start);
-			kfree(nn->buf);
-			cn->next = nn->next;
-			kfree(nn);
-			kfree(cn->buf);
-			cn->buf = buf;
-			cn->start = start;
-			cn->end = end;
-			cn = current->sdfp_list;
-			nn = cn->next;
-		}
+	struct sdfp_node *cn = current->sdfp_list;
+	if (nn != cn) {
+		nn->next = cn->next;
+		cn->next = nn;
 	}
-#endif
-	mutex_unlock(lock);
 }
 
 /**
@@ -256,6 +235,7 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 	uintptr_t start = (uintptr_t)from;
 	uintptr_t end = start + n;
 	struct sdfp_node *nn = 0;
+	struct mutex *lock = &current->sdfp_lock;
 	if (!n || sdfp_no_check || pagefault_disabled())
 		return;
 	if (nr < 0 || nr >= NR_syscalls) {
@@ -266,9 +246,11 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 	} else if (test_bit(nr, sdfp_ignored_calls))
 		return;
 	atomic64_add(n, &num_bytes[nr]);
+	mutex_lock(&lock);
 	nn = new_node((void *)to, start, end);
 	if (!nn) {
 		printk(KERN_ALERT "SDFP: Malloc failure in new node\n");
+		mutex_unlock(&lock);
 		sdfp_clear(current, nr);
 		return;
 	}
@@ -283,6 +265,7 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 		}
 	}
 	add_node(nn);
+	mutex_unlock(&lock);
 }
 EXPORT_SYMBOL(sdfp_check);
 
@@ -296,7 +279,10 @@ void sdfp_clear(struct task_struct *tsk, int nr)
 	struct sdfp_node *cn = 0;
 	mutex_lock(lock);
 	cn = tsk->sdfp_list;
-	tsk->sdfp_list = 0;
+	cn->start = 0;
+	cn->end = 0;
+	cn = cn->next;
+	tsk->sdfp_list->next = 0;
 	mutex_unlock(lock);
 	while (cn) {
 		struct sdfp_node *nn = cn->next;

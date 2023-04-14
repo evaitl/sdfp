@@ -90,7 +90,8 @@ int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
 	dst->thread.vm86 = NULL;
 #endif
 #ifdef CONFIG_DEBUG_SDFP
-	dst->sdfp_list=0;
+	dst->sdfp_list=kzalloc(sizeof(struct sdfp_node), GFP_KERNEL);
+        dst->sdfp_list->buf=kmalloc(4096,GFP_KERNEL);
 	mutex_init(&dst->sdfp_lock);
 #endif
 	/* Drop the copied pointer to current's fpstate */
