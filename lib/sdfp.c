@@ -246,7 +246,7 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 	} else if (test_bit(nr, sdfp_ignored_calls))
 		return;
 	atomic64_add(n, &num_bytes[nr]);
-	mutex_lock(&lock);
+	mutex_lock(lock);
 	nn = new_node((void *)to, start, end);
 	if (!nn) {
 		printk(KERN_ALERT "SDFP: Malloc failure in new node\n");
