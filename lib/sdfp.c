@@ -226,12 +226,12 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 	uintptr_t start = (uintptr_t)from;
 	uintptr_t end = start + n;
 	struct mutex *lock = &current->sdfp_lock;
+	BUG_ON(n > 4096);
 	if (!n || sdfp_no_check || pagefault_disabled())
 		return;
 	if (nr < 0 || nr >= NR_syscalls) {
 		printk(KERN_ALERT "SDFP: bad syscall number: %d, state %d", nr,
 		       get_current_state());
-
 		return;
 	} else if (test_bit(nr, sdfp_ignored_calls))
 		return;
@@ -260,19 +260,20 @@ EXPORT_SYMBOL(sdfp_check);
 void sdfp_clear(struct task_struct *tsk, int nr)
 {
 	struct mutex *lock = &tsk->sdfp_lock;
-	struct sdfp_node *cn = tsk->sdfp_list;
+	struct sdfp_node *sn = tsk->sdfp_list;
+	struct sdfp_node *cn = 0;
 	mutex_lock(lock);
-	cn->start = 0;
-	cn->end = 0;
-	cn = cn->next;
-	tsk->sdfp_list->next = 0;
+	sn->start = 0;
+	sn->end = 0;
+	cn = sn->next;
+	sn->next = 0;
 	while (cn) {
 		struct sdfp_node *nn = cn->next;
 		kfree(cn->buf);
 		kfree(cn);
 		cn = nn;
 	}
-	mutex_unlock(lock);
 	tsk->sdfp_nr = nr;
+	mutex_unlock(lock);
 }
 EXPORT_SYMBOL(sdfp_clear);
