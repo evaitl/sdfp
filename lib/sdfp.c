@@ -147,8 +147,7 @@ static bool data_check(uint8_t *buf, uintptr_t start, uintptr_t end)
 	struct sdfp_node *cn = current->sdfp_list;
 	bool ret = false;
 	while (cn) {
-		if ((cn->start < end) &&
-		    (cn->end > start)) {
+		if ((cn->start < end) && (cn->end > start)) {
 			// There is an overlap.
 			uintptr_t ostart = max(cn->start, start);
 			uintptr_t oend = min(cn->end, end);
@@ -158,8 +157,7 @@ static bool data_check(uint8_t *buf, uintptr_t start, uintptr_t end)
 				       "SDFP: Multi-read detected in pid %d syscall %d",
 				       current->pid, nr);
 			if (memcmp(&cn->buf[ostart - cn->start],
-				   &buf[ostart - start],
-				   oend - ostart)) {
+				   &buf[ostart - start], oend - ostart)) {
 				memcpy(&buf[ostart - start],
 				       &cn->buf[ostart - cn->start],
 				       oend - ostart);
@@ -178,26 +176,28 @@ static bool data_check(uint8_t *buf, uintptr_t start, uintptr_t end)
 static void add_node(uint8_t *buf, uintptr_t start, uintptr_t end)
 {
 	struct sdfp_node *cn = current->sdfp_list;
-        if(cn->start){
-                // Start buffer is used. Create a new buf and link it in after
-                // start buffer.
-                struct sdfp_node *nn=kmalloc(sizeof(struct sdfp_node), GFP_KERNEL);
-                if (!nn){
-                        printk(KERN_ALERT "SDFP: malloc failure");
-                        return;
-                }
-                nn->buf=kmalloc(end-start, GFP_KERNEL);
-                if (!nn->buf){
-                        printk(KERN_ALERT "SDFP: malloc failure");
-                        kfree(nn);
-                        return;
-                }
-                nn->next=cn->next;
-                cn=nn;
-        }
-        cn->start=start;
-        cn->end=end;
-        memcpy(cn->buf,buf,end-start);
+	if (cn->start) {
+		// Start buffer is used. Create a new buf and link it in after
+		// start buffer.
+		struct sdfp_node *nn =
+			kmalloc(sizeof(struct sdfp_node), GFP_KERNEL);
+		if (!nn) {
+			printk(KERN_ALERT "SDFP: malloc failure");
+			return;
+		}
+		nn->buf = kmalloc(end - start, GFP_KERNEL);
+		if (!nn->buf) {
+			printk(KERN_ALERT "SDFP: malloc failure");
+			kfree(nn);
+			return;
+		}
+		nn->next = cn->next;
+		cn->next = nn;
+		cn = nn;
+	}
+	cn->start = start;
+	cn->end = end;
+	memcpy(cn->buf, buf, end - start);
 }
 
 /**
@@ -237,7 +237,7 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 		return;
 	atomic64_add(n, &num_bytes[nr]);
 	mutex_lock(lock);
-	if (data_check((uint8_t *)to,start,end)) {
+	if (data_check((uint8_t *)to, start, end)) {
 		printk(KERN_ALERT
 		       "SDFP: Modifed multi detected in pid %d syscall %d bytes %ld",
 		       current->pid, nr, n);
