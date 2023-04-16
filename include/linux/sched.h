@@ -953,6 +953,7 @@ struct task_struct {
 
 #ifdef CONFIG_DEBUG_SDFP
         struct sdfp_node *sdfp_list;
+        uintptr_t sdfp_sbuf_sz;
 	int sdfp_nr;
 	struct mutex sdfp_lock;
 #endif

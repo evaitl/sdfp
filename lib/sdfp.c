@@ -175,29 +175,40 @@ static bool data_check(uint8_t *buf, uintptr_t start, uintptr_t end)
  */
 static void add_node(uint8_t *buf, uintptr_t start, uintptr_t end)
 {
-	struct sdfp_node *cn = current->sdfp_list;
-	if (cn->start) {
-		// Start buffer is used. Create a new buf and link it in after
-		// start buffer.
-		struct sdfp_node *nn =
-			kmalloc(sizeof(struct sdfp_node), GFP_KERNEL);
-		if (!nn) {
-			printk(KERN_ALERT "SDFP: malloc failure");
-			return;
-		}
-		nn->buf = kmalloc(end - start, GFP_KERNEL);
-		if (!nn->buf) {
-			printk(KERN_ALERT "SDFP: malloc failure");
-			kfree(nn);
-			return;
-		}
-		nn->next = cn->next;
-		cn->next = nn;
-		cn = nn;
-	}
-	cn->start = start;
-	cn->end = end;
-	memcpy(cn->buf, buf, end - start);
+	struct sdfp_node *sn = current->sdfp_list;
+        if (!sn){
+                // There is no static buf, so create one.
+                sn=current->sdfp_list=kzalloc(sizeof(struct sdfp_node),GFP_KERNEL);
+                current->sdfp_sbuf_sz=0;
+        }
+        if (sn->start==0){
+                // Static buf isn't being used. Use it.
+                if(current->sdfp_sbuf_sz <(end-start)){
+                        current->sdfp_sbuf_sz = end-start;
+                        kfree(sn->buf);
+                        sn->buf=kmalloc(end-start,GFP_KERNEL);
+                }
+                memcpy(sn->buf,buf,end-start);
+                sn->start=start;
+                sn->end=end;
+                sn->next=0;
+        }else {
+                // Static buf exists and being used. 
+                uint8_t *nbuf=kmalloc(end-start,GFP_KERNEL);
+                struct sdfp_node *nn=kmalloc(sizeof(struct sdfp_node),GFP_KERNEL);
+                memcpy(nbuf,buf,end-start);
+                if(current->sdfp_sbuf_sz < (end-start)){
+                        // Static buf is smaller than this one. Swap em. 
+                        swap(start,sn->start);
+                        swap(end,sn->end);
+                        swap(nbuf,sn->buf);
+                }
+                nn->start=start;
+                nn->end=end;
+                nn->buf=nbuf;
+                nn->next=sn->next;
+                sn->next=nn;
+        }
 }
 
 /**
@@ -226,7 +237,6 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 	uintptr_t start = (uintptr_t)from;
 	uintptr_t end = start + n;
 	struct mutex *lock = &current->sdfp_lock;
-	BUG_ON(n > 4096);
 	if (!n || sdfp_no_check || pagefault_disabled())
 		return;
 	if (nr < 0 || nr >= NR_syscalls) {
@@ -260,20 +270,20 @@ EXPORT_SYMBOL(sdfp_check);
 void sdfp_clear(struct task_struct *tsk, int nr)
 {
 	struct mutex *lock = &tsk->sdfp_lock;
-	struct sdfp_node *sn = tsk->sdfp_list;
-	struct sdfp_node *cn = 0;
+        struct sdfp_node *cn=0;
 	mutex_lock(lock);
-	sn->start = 0;
-	sn->end = 0;
-	cn = sn->next;
-	sn->next = 0;
-	while (cn) {
-		struct sdfp_node *nn = cn->next;
-		kfree(cn->buf);
-		kfree(cn);
-		cn = nn;
-	}
-	tsk->sdfp_nr = nr;
+        cn=tsk->sdfp_list;
+        if(nr!=-1 && cn){
+                // Don't free the static node, just mark it unused.
+                cn->start=0;
+                cn=cn->next;
+        }
+        while(cn){
+                struct sdfp_node *nn=cn->next;
+                kfree(cn->buf);
+                kfree(cn);
+                cn=nn;
+        }
 	mutex_unlock(lock);
 }
 EXPORT_SYMBOL(sdfp_clear);
