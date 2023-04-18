@@ -152,12 +152,15 @@ static bool data_check(uint8_t *buf, uintptr_t start, uintptr_t end)
 			// There is an overlap.
 			uintptr_t ostart = max(cn->start, start);
 			uintptr_t oend = min(cn->end, end);
+			BUG_ON(end-start > 4096);
+			BUG_ON(cn->end-cn->start > 4096);
+			BUG_ON(ostart-start > 4096);
+			BUG_ON(ostart-cn->start > 4096);
 			atomic_inc(&num_multis[nr]);
 			if (!test_and_set_bit(nr, sdfp_multiread_reported))
 				printk(KERN_ALERT
 				       "SDFP: Multi-read detected in pid %d syscall %d",
 				       current->pid, nr);
-#if 0			
 			if (memcmp(&buf[ostart - start],
 				   &cn->buf[ostart - cn->start],
 				   oend - ostart)) {
@@ -166,11 +169,10 @@ static bool data_check(uint8_t *buf, uintptr_t start, uintptr_t end)
 				       oend - ostart);
 				ret = true;
 			}
-#endif
 			if(msg_count < 10){
 				msg_count++;
-				printk(KERN_ALERT "SDFP: buf [%p..%p) cbuf (%p..%p] %ld bytes %p->%p",
-				       &buf[0], &buf[end-start], &cn->buf[0],&cn->buf[cn->end-cn->start],
+				printk(KERN_ALERT "SDFP: buf [%p..%p).%ld cbuf [%p..%p).%ld, %ld bytes %p->%p",
+				       &buf[0], &buf[end-start], end-start, &cn->buf[0],&cn->buf[cn->end-cn->start], cn->end-cn->start,
 				       oend-ostart,
 				       &cn->buf[ostart-cn->start],
 				       &buf[ostart-start]);
@@ -188,6 +190,7 @@ static bool data_check(uint8_t *buf, uintptr_t start, uintptr_t end)
 static void add_node(uint8_t *buf, uintptr_t start, uintptr_t end)
 {
 	struct sdfp_node *sn = current->sdfp_list;
+	BUG_ON(end-start > 4096);
         if (!sn){
                 // There is no static buf, so create one.
                 sn=current->sdfp_list=kzalloc(sizeof(struct sdfp_node),GFP_KERNEL);
@@ -257,7 +260,10 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 	}
 	if (!n || sdfp_no_check || pagefault_disabled())
 		return;
-	BUG_ON(n>4096);
+	if(n>4096){
+		printk(KERN_ALERT "SDFP: large buffer? nr %d n = %ld",nr, n);
+		return;
+	}
 	if (nr < 0 || nr >= NR_syscalls) {
 		printk(KERN_ALERT "SDFP: bad syscall number: %d, state %d", nr,
 		       get_current_state());
@@ -293,9 +299,12 @@ void sdfp_clear(struct task_struct *tsk, int nr)
 	mutex_lock(lock);
         cn=tsk->sdfp_list;
         if(nr!=-1 && cn){
+		struct sdfp_node *sn=cn;
                 // Don't free the static node, just mark it unused.
                 cn->start=0;
+		cn->end=0;
                 cn=cn->next;
+		sn->next=0;
         }
         while(cn){
                 struct sdfp_node *nn=cn->next;
