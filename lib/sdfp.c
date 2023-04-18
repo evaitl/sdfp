@@ -12,6 +12,7 @@
 #include <linux/export.h>
 #include <linux/debugfs.h>
 
+static int msg_count=0;
 static bool sdfp_no_check = 1;
 static bool sdfp_kill_doublefetch = 0;
 static DECLARE_BITMAP(sdfp_ignored_calls, NR_syscalls) = { 0 };
@@ -156,12 +157,23 @@ static bool data_check(uint8_t *buf, uintptr_t start, uintptr_t end)
 				printk(KERN_ALERT
 				       "SDFP: Multi-read detected in pid %d syscall %d",
 				       current->pid, nr);
-			if (memcmp(&cn->buf[ostart - cn->start],
-				   &buf[ostart - start], oend - ostart)) {
+#if 0			
+			if (memcmp(&buf[ostart - start],
+				   &cn->buf[ostart - cn->start],
+				   oend - ostart)) {
 				memcpy(&buf[ostart - start],
 				       &cn->buf[ostart - cn->start],
 				       oend - ostart);
 				ret = true;
+			}
+#endif
+			if(msg_count < 10){
+				msg_count++;
+				printk(KERN_ALERT "SDFP: buf [%p..%p) cbuf (%p..%p] %ld bytes %p->%p",
+				       &buf[0], &buf[end-start], &cn->buf[0],&cn->buf[cn->end-cn->start],
+				       oend-ostart,
+				       &cn->buf[ostart-cn->start],
+				       &buf[ostart-start]);
 			}
 		}
 		cn = cn->next;
@@ -179,11 +191,13 @@ static void add_node(uint8_t *buf, uintptr_t start, uintptr_t end)
         if (!sn){
                 // There is no static buf, so create one.
                 sn=current->sdfp_list=kzalloc(sizeof(struct sdfp_node),GFP_KERNEL);
-                current->sdfp_sbuf_sz=0;
+		sn->buf=kmalloc(4096,GFP_KERNEL);
+                current->sdfp_sbuf_sz=4096;
         }
         if (sn->start==0){
                 // Static buf isn't being used. Use it.
                 if(current->sdfp_sbuf_sz <(end-start)){
+			printk(KERN_ALERT "SDFP: Shouldn't be here");
                         current->sdfp_sbuf_sz = end-start;
                         kfree(sn->buf);
                         sn->buf=kmalloc(end-start,GFP_KERNEL);
@@ -198,6 +212,7 @@ static void add_node(uint8_t *buf, uintptr_t start, uintptr_t end)
                 struct sdfp_node *nn=kmalloc(sizeof(struct sdfp_node),GFP_KERNEL);
                 memcpy(nbuf,buf,end-start);
                 if(current->sdfp_sbuf_sz < (end-start)){
+			printk(KERN_ALERT "SDFP: Shouldn't be here either");
                         // Static buf is smaller than this one. Swap em. 
                         swap(start,sn->start);
                         swap(end,sn->end);
@@ -237,8 +252,12 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 	uintptr_t start = (uintptr_t)from;
 	uintptr_t end = start + n;
 	struct mutex *lock = &current->sdfp_lock;
+	if (sdfp_no_check){
+		msg_count=0;
+	}
 	if (!n || sdfp_no_check || pagefault_disabled())
 		return;
+	BUG_ON(n>4096);
 	if (nr < 0 || nr >= NR_syscalls) {
 		printk(KERN_ALERT "SDFP: bad syscall number: %d, state %d", nr,
 		       get_current_state());
