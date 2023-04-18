@@ -278,6 +278,7 @@ void sdfp_clear(struct task_struct *tsk, int nr)
 	struct mutex *lock = &tsk->sdfp_lock;
 	struct sdfp_node *cn = 0;
 	mutex_lock(lock);
+	tsk->sdfp_nr = nr;
 	cn = tsk->sdfp_list;
 	if (nr != -1 && cn) {
 		struct sdfp_node *sn = cn;
