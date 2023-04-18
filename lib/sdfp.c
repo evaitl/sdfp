@@ -187,7 +187,6 @@ static void add_node(uint8_t *buf, uintptr_t start, uintptr_t end)
 	if (sn->start == 0) {
 		// Static buf isn't being used. Use it.
 		if (current->sdfp_sbuf_sz < (end - start)) {
-			printk(KERN_ALERT "SDFP: Shouldn't be here");
 			current->sdfp_sbuf_sz = end - start;
 			kfree(sn->buf);
 			sn->buf = kmalloc(end - start, GFP_KERNEL);
@@ -203,7 +202,6 @@ static void add_node(uint8_t *buf, uintptr_t start, uintptr_t end)
 			kmalloc(sizeof(struct sdfp_node), GFP_KERNEL);
 		memcpy(nbuf, buf, end - start);
 		if (current->sdfp_sbuf_sz < (end - start)) {
-			printk(KERN_ALERT "SDFP: Shouldn't be here either");
 			// Static buf is smaller than this one. Swap em.
 			swap(start, sn->start);
 			swap(end, sn->end);
