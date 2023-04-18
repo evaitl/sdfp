@@ -12,7 +12,6 @@
 #include <linux/export.h>
 #include <linux/debugfs.h>
 
-static int msg_count=0;
 static bool sdfp_no_check = 1;
 static bool sdfp_kill_doublefetch = 0;
 static DECLARE_BITMAP(sdfp_ignored_calls, NR_syscalls) = { 0 };
@@ -115,6 +114,7 @@ const static struct file_operations enable_fops = {
  */
 static int __init sdfp_init(void)
 {
+	set_bit(__NR_read, sdfp_ignored_calls);
 	set_bit(__NR_write, sdfp_ignored_calls);
 	set_bit(__NR_execve, sdfp_ignored_calls);
 	set_bit(__NR_futex, sdfp_ignored_calls);
@@ -152,10 +152,6 @@ static bool data_check(uint8_t *buf, uintptr_t start, uintptr_t end)
 			// There is an overlap.
 			uintptr_t ostart = max(cn->start, start);
 			uintptr_t oend = min(cn->end, end);
-			BUG_ON(end-start > 4096);
-			BUG_ON(cn->end-cn->start > 4096);
-			BUG_ON(ostart-start > 4096);
-			BUG_ON(ostart-cn->start > 4096);
 			atomic_inc(&num_multis[nr]);
 			if (!test_and_set_bit(nr, sdfp_multiread_reported))
 				printk(KERN_ALERT
@@ -168,14 +164,6 @@ static bool data_check(uint8_t *buf, uintptr_t start, uintptr_t end)
 				       &cn->buf[ostart - cn->start],
 				       oend - ostart);
 				ret = true;
-			}
-			if(msg_count < 10){
-				msg_count++;
-				printk(KERN_ALERT "SDFP: buf [%p..%p).%ld cbuf [%p..%p).%ld, %ld bytes %p->%p",
-				       &buf[0], &buf[end-start], end-start, &cn->buf[0],&cn->buf[cn->end-cn->start], cn->end-cn->start,
-				       oend-ostart,
-				       &cn->buf[ostart-cn->start],
-				       &buf[ostart-start]);
 			}
 		}
 		cn = cn->next;
@@ -190,43 +178,43 @@ static bool data_check(uint8_t *buf, uintptr_t start, uintptr_t end)
 static void add_node(uint8_t *buf, uintptr_t start, uintptr_t end)
 {
 	struct sdfp_node *sn = current->sdfp_list;
-	BUG_ON(end-start > 4096);
-        if (!sn){
-                // There is no static buf, so create one.
-                sn=current->sdfp_list=kzalloc(sizeof(struct sdfp_node),GFP_KERNEL);
-		sn->buf=kmalloc(4096,GFP_KERNEL);
-                current->sdfp_sbuf_sz=4096;
-        }
-        if (sn->start==0){
-                // Static buf isn't being used. Use it.
-                if(current->sdfp_sbuf_sz <(end-start)){
+	if (!sn) {
+		// There is no static buf, so create one.
+		sn = current->sdfp_list =
+			kzalloc(sizeof(struct sdfp_node), GFP_KERNEL);
+		current->sdfp_sbuf_sz = 0;
+	}
+	if (sn->start == 0) {
+		// Static buf isn't being used. Use it.
+		if (current->sdfp_sbuf_sz < (end - start)) {
 			printk(KERN_ALERT "SDFP: Shouldn't be here");
-                        current->sdfp_sbuf_sz = end-start;
-                        kfree(sn->buf);
-                        sn->buf=kmalloc(end-start,GFP_KERNEL);
-                }
-                memcpy(sn->buf,buf,end-start);
-                sn->start=start;
-                sn->end=end;
-                sn->next=0;
-        }else {
-                // Static buf exists and being used. 
-                uint8_t *nbuf=kmalloc(end-start,GFP_KERNEL);
-                struct sdfp_node *nn=kmalloc(sizeof(struct sdfp_node),GFP_KERNEL);
-                memcpy(nbuf,buf,end-start);
-                if(current->sdfp_sbuf_sz < (end-start)){
+			current->sdfp_sbuf_sz = end - start;
+			kfree(sn->buf);
+			sn->buf = kmalloc(end - start, GFP_KERNEL);
+		}
+		memcpy(sn->buf, buf, end - start);
+		sn->start = start;
+		sn->end = end;
+		sn->next = 0;
+	} else {
+		// Static buf exists and being used.
+		uint8_t *nbuf = kmalloc(end - start, GFP_KERNEL);
+		struct sdfp_node *nn =
+			kmalloc(sizeof(struct sdfp_node), GFP_KERNEL);
+		memcpy(nbuf, buf, end - start);
+		if (current->sdfp_sbuf_sz < (end - start)) {
 			printk(KERN_ALERT "SDFP: Shouldn't be here either");
-                        // Static buf is smaller than this one. Swap em. 
-                        swap(start,sn->start);
-                        swap(end,sn->end);
-                        swap(nbuf,sn->buf);
-                }
-                nn->start=start;
-                nn->end=end;
-                nn->buf=nbuf;
-                nn->next=sn->next;
-                sn->next=nn;
-        }
+			// Static buf is smaller than this one. Swap em.
+			swap(start, sn->start);
+			swap(end, sn->end);
+			swap(nbuf, sn->buf);
+		}
+		nn->start = start;
+		nn->end = end;
+		nn->buf = nbuf;
+		nn->next = sn->next;
+		sn->next = nn;
+	}
 }
 
 /**
@@ -255,15 +243,8 @@ void sdfp_check(volatile void *to, const void __user *from, unsigned long n)
 	uintptr_t start = (uintptr_t)from;
 	uintptr_t end = start + n;
 	struct mutex *lock = &current->sdfp_lock;
-	if (sdfp_no_check){
-		msg_count=0;
-	}
 	if (!n || sdfp_no_check || pagefault_disabled())
 		return;
-	if(n>4096){
-		printk(KERN_ALERT "SDFP: large buffer? nr %d n = %ld",nr, n);
-		return;
-	}
 	if (nr < 0 || nr >= NR_syscalls) {
 		printk(KERN_ALERT "SDFP: bad syscall number: %d, state %d", nr,
 		       get_current_state());
@@ -295,23 +276,23 @@ EXPORT_SYMBOL(sdfp_check);
 void sdfp_clear(struct task_struct *tsk, int nr)
 {
 	struct mutex *lock = &tsk->sdfp_lock;
-        struct sdfp_node *cn=0;
+	struct sdfp_node *cn = 0;
 	mutex_lock(lock);
-        cn=tsk->sdfp_list;
-        if(nr!=-1 && cn){
-		struct sdfp_node *sn=cn;
-                // Don't free the static node, just mark it unused.
-                cn->start=0;
-		cn->end=0;
-                cn=cn->next;
-		sn->next=0;
-        }
-        while(cn){
-                struct sdfp_node *nn=cn->next;
-                kfree(cn->buf);
-                kfree(cn);
-                cn=nn;
-        }
+	cn = tsk->sdfp_list;
+	if (nr != -1 && cn) {
+		struct sdfp_node *sn = cn;
+		// Don't free the static node, just mark it unused.
+		cn->start = 0;
+		cn->end = 0;
+		cn = cn->next;
+		sn->next = 0;
+	}
+	while (cn) {
+		struct sdfp_node *nn = cn->next;
+		kfree(cn->buf);
+		kfree(cn);
+		cn = nn;
+	}
 	mutex_unlock(lock);
 }
 EXPORT_SYMBOL(sdfp_clear);
