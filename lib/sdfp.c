@@ -114,7 +114,6 @@ const static struct file_operations enable_fops = {
  */
 static int __init sdfp_init(void)
 {
-	set_bit(__NR_read, sdfp_ignored_calls);
 	set_bit(__NR_write, sdfp_ignored_calls);
 	set_bit(__NR_execve, sdfp_ignored_calls);
 	set_bit(__NR_futex, sdfp_ignored_calls);
